@@ -18,6 +18,7 @@ putCustomFts = (code, pushData) => {
     }
 }
 
+// 导入
 importCommand = () => {
     var options = {
         filters: [{ name: 'json', extensions: ['json'] }, ]
@@ -31,20 +32,16 @@ importCommand = () => {
             window.messageBox({ type: 'error', icon: window.logo, message: "格式错误！", buttons: ['朕知道了'] })
             return
         }
+        // 单个命令导入
         if (typeof(pushData.features)=='object') {
-            var code = basename(file, '.json');
-            if (code in customFts) {
-                window.messageBox({ type: 'error', icon: window.logo, message: "命令名称重复, 请先修改文件名再导入！", buttons: ['朕知道了'] })
-            } else {
-                putCustomFts(code, pushData);
-                showOptions();
-            }
+            var code = pushData.features.code;
+            putCustomFts(code, pushData);
+            showOptions();
+        // 多个命令导入
         } else {
             if (typeof (Object.values(pushData)[0].features) == 'object') {
                 for (var code of Object.keys(pushData)){
-                    if (!(code in customFts)) {
-                        putCustomFts(code, pushData[code]);
-                    }
+                    putCustomFts(code, pushData[code]);
                 }
                 showOptions();
             } else {
@@ -70,7 +67,8 @@ window.saveFile(options, JSON.stringify(json));
 clearAll = () => {
     window.messageBox({ type: 'question', icon: window.logo, message: "将会清空所有命令，请确认！", buttons: ['手抖...', '确定！'] }, index => {
         if (index) {
-            utools.db.remove('customFts')
+            utools.db.remove('customFts');
+            clearAllFeatures();
             showOptions();
         }
     })
@@ -137,12 +135,18 @@ programs = {
 showOptions = () => {
     var currentFts = utools.getFeatures(),
         customFts = getCustomFts();
-    let featureList = '<table><tr><td></td><td>关键字</td><td>说明</td><td>启用</td></tr>';
+    let featureList = '<table><tr><td width="40"></td><td width="240">模式</td><td width="270">说明</td><td>启用</td></tr>';
     for (var fts in customFts) {
         let features = customFts[fts].features;
         var cmds = '';
-        if (customFts[fts].noKeyword) {
-            cmds = '<span class="keyword">匹配主输入框文本进入</span>';
+        if (features.cmds[0].type == 'regex') {
+            var reg = features.cmds[0].match;
+            if (reg.length > 15) reg = reg.slice(0, 15) + '...';
+            cmds = `<span class="keyword re">正则: ${reg}</span>`;
+        } else if (features.cmds[0].type == 'window') {
+            var app = features.cmds[0].match.app
+            if (app.length > 15) app = app.slice(0, 15) + '...';
+            cmds = `<span class="keyword win">窗口: ${app}</span>`;
         } else {
             features.cmds.forEach(cmd => {
                 cmds += `<span class="keyword">${cmd}</span>`;
@@ -155,13 +159,8 @@ showOptions = () => {
                 break;
             }
         }
-        try {
-            var iconpath = cacheIco(customFts[fts].base64Ico, features.icon);
-        } catch (e) {
-            window.messageBox({ type: 'error', icon: window.logo, message: e.toString(), buttons: ['纳尼?!'] })
-        }
-        featureList += `<tr><td><img class="logo" src="${iconpath}"></td>
-        <td>${cmds}</td><td width="300px">${features.explain}</td><td>
+        featureList += `<tr><td><img class="logo" src="${features.icon}"></td>
+        <td>${cmds}</td><td>${features.explain}</td><td>
         <label class="switch-btn">
         <input class="checked-switch" id="${features.code}" type="checkbox" ${isChecked}>
         <span class="text-switch"></span>
@@ -187,7 +186,14 @@ showCustomize = () => {
     $("#customize").remove();
     let options = `<option>${Object.keys(programs).join('</option><option>')}</option>`
     customWindow = `<div id="customize">
-    <p><span class="word">关键字</span><input type="text" id="kw" placeholder="多个关键字用逗号隔开"></p>
+    <p><input type="text" id="code" style="display: none">
+    <span class="word">模&#12288;式</span>
+    <select id="type">
+            <option value="key">通过输入关键字进入插件</option>
+            <option value="regex">通过正则匹配主输入框文本</option>
+            <option value="window">通过呼出uTools前的活动窗口匹配</option>
+        </select>
+    <span class="word" id="ruleWord">关键字</span><input type="text" id="rule" placeholder="多个关键字用逗号隔开"></p>
     <p><span class="word">说&#12288;明</span><input type="text" id="desc" placeholder="命令功能的描述"></p>
     <p>
         <span class="word">类&#12288;型</span>
@@ -202,14 +208,15 @@ showCustomize = () => {
         <select id="vars">
             <option value="" style="display:none">插入特殊变量</option>
             <option value="{{isWin}}">是否Window系统</option>
-            <option value="{{HostName}}">本计算机名</option>
-            <option value="{{input}}">主输入框的文本</option>
+            <option value="{{LocalId}}">本机唯一ID</option>
+            <option value="{{input}}" class="var regex">主输入框的文本</option>
             <option value="{{subinput}}">子输入框的文本</option>
-            <option value="{{pwd}}">文件管理器当前目录</option>
-            <option value="{{ChromeUrl}}">Chrome当前链接</option>
+            <option value="{{pwd}}" class="var window">文件管理器当前目录</option>
+            <option value="{{WindowInfo}}" class="var window">当前窗口信息(JSON格式)</option>
+            <option value="{{BrowserUrl}}">浏览器当前链接</option>
             <option value="{{ClipText}}">剪切板的文本</option>
-            <option value="{{SelectText}}">选中的文本</option>
-            <option value="{{SelectFile}}">选中的文件</option>
+            aa<option value="{{SelectText}}" class="selectText">选中的文本</option>
+            <option value="{{SelectFile}}" class="var window">选中的文件</option>
         </select>
         <span class="word">输&#12288;出</span>
         <select id="output">
@@ -219,6 +226,7 @@ showCustomize = () => {
             <option value="clip">复制到剪贴板</option>
             <option value="send">发送到活动窗口</option>
             <option value="notice">发送系统通知</option>
+            <option value="terminal">在终端显示</option>
         </select>
     </p>
     <p>
@@ -251,6 +259,55 @@ showCustomize = () => {
     });
     window.editor.setOption("mode", mode);
     $("#customize").animate({ top: '0px' });
+}
+
+// 重置变量下拉框
+resetVars = () => {
+    $('#vars').val("");
+    $("#vars").css({ 'color': '#999' });
+}
+
+// 检查输出选项
+outputCheck = () => {
+    var output = $("#output").val()
+    if (output == 'text' || output == 'html') {
+        $(".selectText").hide()
+    } else {
+        $(".selectText").show()
+    }
+}
+
+// 检查模式选项
+typeCheck = () => {
+    var type = $("#type").val();
+    switch (type) {
+        case 'key':
+            $("#ruleWord").html("关键字");
+            $(".var.regex").hide()
+            $(".var.window").hide()
+            $("#rule").prop("placeholder", '多个关键字用逗号隔开');
+            break;
+        case 'regex':
+            $("#ruleWord").html("正&#12288;则");
+            $(".var.regex").show()
+            $(".var.window").hide()
+            $("#rule").prop("placeholder", '匹配的正则规则，如/\\w+/i');
+            break;
+        case 'window':
+            $("#ruleWord").html("进&#12288;程");
+            $(".var.regex").hide()
+            $(".var.window").show()
+            $("#rule").prop("placeholder", '窗口的进程名，支持正则，如explorer.exe');
+            break;
+        default:
+            break;
+    }
+}
+
+clearAllFeatures = () => {
+    for (var fts of utools.getFeatures()) {
+        utools.removeFeature(fts.code)
+    }
 }
 
 // 开关
@@ -290,22 +347,24 @@ $("#options").on('click', '.editBtn', function () {
     var code = $(this).attr('code');
     var data = utools.db.get("customFts").data[code];
     showCustomize();
-    // 判断是通过关键词进入还是主输入框进入
-    if (data.noKeyword) {
-        $('#kw').val(data.features.code);
-        $('#kw').prop('disabled', true);
+    var cmds = data.features.cmds[0]
+    if (cmds.type == 'regex') {
+        $('#type').val('regex')
+        $('#rule').val(cmds.match);
+    } else if (cmds.type == 'window') {
+        $('#type').val('window')
+        $('#rule').val(cmds.match.app);
     } else {
-        $('#kw').val(data.features.cmds.toString());
+        $('#type').val('key')
+        $('#rule').val(data.features.cmds.toString());
     }
-    $('#kw').attr('edit', true);
+    $('#code').val(code);
     $('#program').val(data.program);
     $('#output').val(data.output);
     $('#desc').val(data.features.explain);
     $('#codec').val(data.codec);
     $("#icon").attr('src', data.features.icon);
     let mode = data.program;
-    let iconame = basename(data.features.icon);
-    if (iconame != `${mode}.png`) $('#iconame').val(iconame);
     if (mode == 'custom') {
         $('#custombin').show().val(data.customOptions.bin);
         $('#customarg').show().val(data.customOptions.argv);
@@ -315,6 +374,9 @@ $("#options").on('click', '.editBtn', function () {
     mode == 'cmd' && (mode = 'powershell');
     window.editor.setOption("mode", mode);
     window.editor.setValue(data.cmd);
+    resetVars();
+    typeCheck();
+    outputCheck();
 })
 
 // 导出
@@ -323,7 +385,6 @@ $("#options").on('click', '.exportBtn', function () {
         json = getCustomFts()[code],
         options = {
             title: '选择保存位置',
-            defaultPath: code,
             filters: [
                 { name: 'json', extensions: ['json'] },
             ]
@@ -348,7 +409,7 @@ $("#options").on('click', '#icon, #iconame', function () {
         buttonLabel: '选择',
         filters: [{
             name: 'Images',
-            extensions: ['jpg', 'jpeg', 'png']
+            extensions: ['png']
         }, ]
     }
     let iconpath = window.openFolder(options)[0];
@@ -358,48 +419,88 @@ $("#options").on('click', '#icon, #iconame', function () {
 
 // 保存
 $("#options").on('click', '.saveBtn', function () {
-    var code = $('#kw').val().split(',')[0].trim()
-    var customFts = getCustomFts();
-    // 如果 code 重复, 编辑状态下不检测
-    if (code in customFts && !$('#kw').attr('edit')) {
-        $('#kw').css({ 'border-bottom-color': '#ec1212' })
-        window.messageBox({ type: 'error', icon: window.logo, message: "命令名称重复!", buttons: ['朕知道了'] })
+    var type = $('#type').val();
+    var code = $("#code").val();
+    if (!code) {
+        // 生成唯一code
+        var uid = Number(Math.random().toString().substr(3, 3) + Date.now()).toString(36);
+        var code = `${type}_${uid}`;
+    }
+    var output = $('#output').val();
+    var cmd = window.editor.getValue();
+    // 合规性校验
+    if (type == 'key'
+        && ['{{input}}', '{{SelectFile}}', '{{pwd}}', '{{WindowInfo}}'].map(x => cmd.includes(x)).includes(true)) {
+        window.messageBox({
+            type: 'error',
+            icon: window.logo,
+            message: "关键字模式无法使用{{input}}、{{SelectFile}}、{{WindowInfo}}、{{pwd}}!",
+            buttons: ['朕知道了']
+        })
+    } else if (type == 'regex'
+        && ['{{SelectFile}}', '{{WindowInfo}}','{{pwd}}'].map(x => cmd.includes(x)).includes(true)) {
+            window.messageBox({
+                type: 'error',
+                icon: window.logo,
+                message: "正则模式无法使用{{SelectFile}}、{{WindowInfo}}、{{pwd}}!",
+                buttons: ['朕知道了']
+            })
+    } else if (type == 'window' && cmd.includes('{{input}}')) {
+        window.messageBox({
+            type: 'error',
+            icon: window.logo,
+            message: "窗口模式无法使用{{input}}!",
+            buttons: ['朕知道了']
+        })
+    } else if (['text', 'html'].includes($('#output').val()) && cmd.includes('{{SelectText}}')) {
+        window.messageBox({
+            type: 'error',
+            icon: window.logo,
+            message: "显示文本或html输出时无法使用{{SelectText}}!",
+            buttons: ['朕知道了']
+        })
     } else {
-        var kw = $('#kw').val().split(','),
-            program = $('#program').val(),
+        var program = $('#program').val(),
             desc = $('#desc').val(),
-            output = $('#output').val(),
             codec = $('#codec').val(),
             iconame = $("#iconame").val(),
             iconpath = $("#icon").attr('src'),
-            cmd = window.editor.getValue(),
             icon,
             base64ico,
             hasSubInput;
         if (!desc) desc = ' ';
-        // 自定义了图标的情况下
+        // 选择了图标的情况下
         if (iconame) {
-            icon = `../QuickCommandIcons/${iconame}`;
-            if (iconpath == icon) {
-                base64ico = window.getBase64Ico(resolve(dirname, iconpath));
-            } else {
-                base64ico = window.getBase64Ico(iconpath);
-            }
+            base64ico = window.getBase64Ico(iconpath);
+            icon = "data:image/png;base64," + base64ico;
         // 未自定义使用默认
         } else {
             icon = iconpath;
-            base64ico = '';
         }
-        // 通过主输入框直接进入
-        if (cmd.includes('{{input}}')) {
-            kw = [{
+        var noKeyword;
+        var rule = $('#rule').val();
+        if (type == 'key') {
+            cmds = rule.split(',')
+            noKeyword = false;
+        }
+        if (type == 'regex') {
+            cmds = [{
                 "label": desc,
-                "type": "over",
+                "type": "regex",
+                "match": rule,
                 "minNum": 1
             }];
             noKeyword = true;
-        } else {
-            noKeyword = false;
+        } 
+        if (type == 'window') {
+            cmds = [{
+                "label": desc,
+                "type": "window",
+                "match": {
+                    "app": rule
+                },
+            }];
+            noKeyword = true;
         }
         // 需要子输入框
         if (cmd.includes('{{subinput}}')) {
@@ -413,14 +514,13 @@ $("#options").on('click', '.saveBtn', function () {
             features: {
                 "code": code,
                 "explain": desc,
-                "cmds": kw,
+                "cmds": cmds,
                 "icon": icon
             },
             program: program,
             cmd: cmd,
             output: output,
             codec: codec,
-            base64Ico: base64ico,
             noKeyword: noKeyword,
             hasSubInput: hasSubInput
         }
@@ -433,13 +533,23 @@ $("#options").on('click', '.saveBtn', function () {
         }
         putCustomFts(code, pushData);
         showOptions();
+        $(`#${code}`).click();
+        if (!$(`#${code}`).is(':checked')) {
+            $(`#${code}`).click();
+        }
     }
 })
+
+hasCustomIcon = () => {
+    var src = $("#icon").attr('src');
+    var iconame = $("#iconame").val();
+    return /data:image\/png;base64,/.test(src) || iconame
+}
 
 // 语言选项改变时
 $("#options").on('change', '#program', function () {
     let mode = $(this).val();
-    if (!$("#iconame").val()) $("#icon").attr('src', `logo/${mode}.png`);
+    if (!hasCustomIcon()) $("#icon").attr('src', `logo/${mode}.png`);
     if (mode == 'custom') {
         $('#custombin').show();
         $('#customarg').show();
@@ -458,4 +568,17 @@ $("#options").on('change', '#program', function () {
 $("#options").on('change', '#vars', function () {
     $("#vars").css({'color':'black'})
     window.editor.replaceSelection($("#vars").val());
+})
+
+// 输出选项改变时
+$("#options").on('change', '#output', function () {
+    resetVars();
+    outputCheck();
+})
+
+
+// 方式选项改变时
+$("#options").on('change', '#type', function () {
+    resetVars();
+    typeCheck();
 })
